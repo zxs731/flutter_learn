@@ -1,5 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:english_words/english_words.dart';
+import 'package:my_flutter_app/question.dart';
+import 'package:http/http.dart' as http;
+import 'dart:async';
 
 void main() => runApp(MyApp());
 
@@ -7,7 +12,7 @@ class MyApp extends StatelessWidget {
   // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
-    final wordPair = WordPair.random();
+   // final Question = Question.random();
     return MaterialApp(
         title: 'Startup Name Generator',
         theme: ThemeData(          // Add the 3 lines from here...
@@ -108,9 +113,28 @@ class RandomWords extends StatefulWidget {
   RandomWordsState createState() => RandomWordsState();
 }
 class RandomWordsState extends State<RandomWords> {
-  final _suggestions = <WordPair>[];
+  final _suggestions = <Question>[];
   final _biggerFont = const TextStyle(fontSize: 18.0);
-  final Set<WordPair> _saved = Set<WordPair>();
+  final Set<Question> _saved = Set<Question>();
+  Future <List<Question>> questions;
+  @override
+   initState()  {
+    super.initState();
+    questions = fetchQuestions();
+  }
+  Future<List<Question>> fetchQuestions() async {
+    final response =
+    await http.get('https://jsonblob.com/api/jsonBlob/164877ff-b99e-11e9-9082-6fd3d4095ece');
+
+    if (response.statusCode == 200) {
+      List<dynamic> s=jsonDecode(response.body);
+      return s.map((x)=>Question.fromJson(x));
+      //return Question.fromJson(json.decode(response.body));
+    } else {
+      // If that response was not OK, throw an error.
+      throw Exception('Failed to load post');
+    }
+  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -121,6 +145,40 @@ class RandomWordsState extends State<RandomWords> {
         ],
       ),
       body: _buildSuggestions(),
+      drawer: Drawer(
+        // Add a ListView to the drawer. This ensures the user can scroll
+        // through the options in the drawer if there isn't enough vertical
+        // space to fit everything.
+        child: ListView(
+          // Important: Remove any padding from the ListView.
+          padding: EdgeInsets.zero,
+          children: <Widget>[
+            DrawerHeader(
+              child: Text('Drawer Header'),
+              decoration: BoxDecoration(
+                color: Colors.purple,
+              ),
+            ),
+            ListTile(
+              title: Text('Item 1'),
+              onTap: () {
+                // Update the state of the app.
+
+                Navigator.pop(context);
+                _neverSatisfied();
+              },
+            ),
+            ListTile(
+              title: Text('Item 2'),
+              onTap: () {
+                // Update the state of the app.
+                // ...
+                Navigator.pop(context);
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
   void _pushSaved() {
@@ -128,10 +186,10 @@ class RandomWordsState extends State<RandomWords> {
       MaterialPageRoute<void>(   // Add 20 lines from here...
         builder: (BuildContext context) {
           final Iterable<ListTile> tiles = _saved.map(
-                (WordPair pair) {
+                (Question pair) {
               return ListTile(
                 title: Text(
-                  pair.asPascalCase,
+                  pair.title,
                   style: _biggerFont,
                 ),
               );
@@ -154,6 +212,40 @@ class RandomWordsState extends State<RandomWords> {
     );
   }
   Widget _buildSuggestions() {
+    var futureBuilder = new FutureBuilder(
+      future: fetchQuestions(),
+      builder: (BuildContext context, AsyncSnapshot snapshot) {
+        switch (snapshot.connectionState) {
+          case ConnectionState.none:
+          case ConnectionState.waiting:
+            //return new Text('loading...');
+              return CircularProgressIndicator();
+          default:
+            if (snapshot.hasError)
+              return new Text('Error: ${snapshot.error}');
+            else
+              return createListView(context, snapshot);
+        }
+
+      },
+    );
+    return futureBuilder;
+      /*
+      ListView.builder(
+        padding: const EdgeInsets.all(16.0),
+        itemBuilder:  (context, i) {
+          if (i.isOdd) return Divider();
+
+          final index = i ~/ 2;
+          if (index >= _suggestions.length) {
+            _suggestions.addAll(questions.take(10));
+          }
+          return _buildRow(_suggestions[index]);
+        });
+    */
+  }
+  Widget createListView(BuildContext context, AsyncSnapshot snapshot) {
+    List<Question> questionList = snapshot.data;
     return ListView.builder(
         padding: const EdgeInsets.all(16.0),
         itemBuilder: /*1*/ (context, i) {
@@ -161,16 +253,31 @@ class RandomWordsState extends State<RandomWords> {
 
           final index = i ~/ 2; /*3*/
           if (index >= _suggestions.length) {
-            _suggestions.addAll(generateWordPairs().take(10)); /*4*/
+            _suggestions.addAll(questionList.take(10)); /*4*/
           }
           return _buildRow(_suggestions[index]);
         });
+    /*
+    return new ListView.builder(
+      itemCount: values.length,
+      itemBuilder: (BuildContext context, int index) {
+        return new Column(
+          children: <Widget>[
+            new ListTile(
+              title: new Text(values[index]),
+            ),
+            new Divider(height: 2.0,),
+          ],
+        );
+      },
+    );
+    */
   }
-  Widget _buildRow(WordPair pair) {
+  Widget _buildRow(Question pair) {
     final bool alreadySaved = _saved.contains(pair);
     return ListTile(
       title: Text(
-        pair.asPascalCase,
+        pair.title,
         style: _biggerFont,
       ),
       trailing: Icon(   // Add the lines from here...
@@ -185,6 +292,40 @@ class RandomWordsState extends State<RandomWords> {
             _saved.add(pair);
           }
         });
+      },
+    );
+  }
+  Future<void> _neverSatisfied() async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false, // user must tap button!
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Confirmation'),
+          backgroundColor: Colors.purple[100],
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text('Are you really submit the exam?'),
+                Text('You cannot regret once submition!'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            FlatButton(
+              child: Text('Confirm'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            FlatButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
       },
     );
   }
