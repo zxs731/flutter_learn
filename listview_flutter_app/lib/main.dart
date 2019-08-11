@@ -6,8 +6,10 @@ import 'package:listview_flutter_app/question.dart';
 import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-
-
+import 'dart:convert';
+import 'dart:io';
+import 'package:http/http.dart';
+import 'dart:async';
 import 'exam.dart';
 import 'mydrawer.dart';
 
@@ -39,40 +41,83 @@ class RandomWordsState extends State<RandomWords> {
   bool isStarted = false;
   DateTime _startTime;
   final Set<Exam> _submitedExams = Set<Exam>();
+  int courseType = 1; //en:1;ma:2
 
   init() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     var str = prefs.getString("examHistories");
     var barColor = prefs.getInt("bar_color");
     var cardColor = prefs.getInt("card_color");
+    //var questionsJson = prefs.getString("questions");
 
     setState(() {
-      if(str!=null) {
+      if (str != null) {
         print('get examHistory为:$str');
         _submitedExams.clear();
         List examsList = json.decode(str);
         var exams = examsList.map((x) => new Exam.fromJson(x));
         _submitedExams.addAll(exams);
       }
-      if(barColor!=null){
+      if (barColor != null) {
         print('get current color:$barColor');
-        currentColor=Color(barColor);
+        currentColor = Color(barColor);
       }
-      if(cardColor!=null){
+      if (cardColor != null) {
         print('get current card color:$cardColor');
-        currentBgColor=Color(cardColor);
+        currentBgColor = Color(cardColor);
       }
-
     });
-
-
   }
+
+  Future<List<Question>> fetchQuestions() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    var json = prefs.getString("questions");
+    if (json == null) {
+      /*
+    var httpClient = new HttpClient();
+    var request = await httpClient.getUrl(Uri.parse('https://jsonblob.com/api/jsonBlob/cfe84bcf-bac2-11e9-93a4-bb8bb69fa70d'));
+    var response = await request.close();
+
+    if (response.statusCode == 200) {
+      json = await response.transform(utf8.decoder).join();
+
+      //return Question.fromJson(json.decode(response.body));
+    } else {
+      // If that response was not OK, throw an error.
+      throw Exception('Failed to load post');
+    }
+    */
+      var s = generateQuestions();
+      prefs.setString("questions", jsonEncode(s));
+      //var en=s.filter((x)=>x.type==1);
+      s.shuffle();
+      _suggestions.addAll(s.take(10)); /*4*/
+
+      print('load from code');
+    } else {
+      print('load from preference');
+      List s = jsonDecode(json);
+      var a = s.map((x) => new Question.fromJson(x)).toList();
+      //print(a);
+      //_suggestions.clear();
+      //_suggestions.addAll(a);
+      list.clear();
+      list.addAll(a);
+      list.shuffle();
+      _suggestions.clear();
+      _suggestions.addAll(list.take(10));
+    }
+    return _suggestions;
+  }
+
   @override
   void initState() {
     //页面初始化
     super.initState();
+    fetchQuestions();
     init();
   }
+
   @override
   Widget build(BuildContext context) {
 //_suggestions.add(generateWordPairs().take(10));
@@ -87,17 +132,50 @@ class RandomWordsState extends State<RandomWords> {
           _buildSubmitButton(),
           //IconButton(icon: Icon(Icons.list), onPressed: _pushSaved),
           PopupMenuButton(
-            itemBuilder: (BuildContext context) =>
-            <PopupMenuItem<String>>[
-              PopupMenuItem<String>(child:ListTile(leading: Icon(Icons.star),title:Text("积分历史")), value: "scores",),
-              PopupMenuItem<String>(child: ListTile(leading: Icon(Icons.trending_up),title:Text("最新题目")), value: "new",),
-              PopupMenuItem<String>(child: ListTile(leading: Icon(Icons.settings),title:Text("设置")), value: "setting",),
-              PopupMenuItem<String>(child: ListTile(leading: Icon(Icons.info),title:Text("关于")), value: "about",),
-              PopupMenuItem<String>(child: ListTile(leading: Icon(Icons.share),title:Text("分享")), value: "share",),
-              PopupMenuItem<String>(child: ListTile(leading: Icon(Icons.color_lens),title:Text("主题颜色")), value: "color",),
-              PopupMenuItem<String>(child: ListTile(leading: Icon(Icons.color_lens),title:Text("背景颜色")), value: "bgcolor",),
-              PopupMenuItem<String>(child: ListTile(leading: Icon(Icons.color_lens),title:Text("重置颜色")), value: "resetcolor",),
-
+            itemBuilder: (BuildContext context) => <PopupMenuItem<String>>[
+              PopupMenuItem<String>(
+                child: ListTile(leading: Icon(Icons.star), title: Text("积分历史")),
+                value: "scores",
+              ),
+              PopupMenuItem<String>(
+                child: ListTile(
+                    leading: Icon(Icons.trending_up), title: Text("最新题目")),
+                value: "new",
+              ),
+              PopupMenuItem<String>(
+                child:
+                    ListTile(leading: Icon(Icons.settings), title: Text("设置")),
+                value: "setting",
+              ),
+              PopupMenuItem<String>(
+                child: ListTile(leading: Icon(Icons.info), title: Text("关于")),
+                value: "about",
+              ),
+              PopupMenuItem<String>(
+                child: ListTile(leading: Icon(Icons.share), title: Text("分享")),
+                value: "share",
+              ),
+              PopupMenuItem<String>(
+                child: ListTile(
+                    leading: Icon(Icons.color_lens), title: Text("主题颜色")),
+                value: "color",
+              ),
+              PopupMenuItem<String>(
+                child: ListTile(
+                    leading: Icon(Icons.color_lens), title: Text("背景颜色")),
+                value: "bgcolor",
+              ),
+              PopupMenuItem<String>(
+                child: ListTile(
+                    leading: Icon(Icons.settings_backup_restore),
+                    title: Text("重置颜色")),
+                value: "resetcolor",
+              ),
+              PopupMenuItem<String>(
+                child: ListTile(
+                    leading: Icon(Icons.cloud_download), title: Text("更新题库")),
+                value: "update",
+              ),
             ],
             onSelected: (String action) {
               switch (action) {
@@ -119,6 +197,9 @@ class RandomWordsState extends State<RandomWords> {
                     currentBgColor = Colors.white;
                   });
                   break;
+                case "update":
+                  _updateQuestionsFromNetwork();
+                  break;
               }
             },
             onCanceled: () {
@@ -129,20 +210,22 @@ class RandomWordsState extends State<RandomWords> {
       ),
       body: _buildSuggestions(),
       floatingActionButton: _buildFloatButton(),
-      drawer:new MyDrawer(),
+      drawer: _buildDrawer(),
     );
   }
+
   Color currentBgColor = Colors.white;
   Color pickerColor = Color(0xff443a49);
   Color currentColor = Colors.blueAccent;
   ValueChanged<Color> onColorChanged;
   changeColor(Color color) {
-    setState((){
+    setState(() {
       pickerColor = color;
     });
   }
-  void _showColorSetting({isBgColor=false}){
-    oriColor=currentColor;
+
+  void _showColorSetting({isBgColor = false}) {
+    oriColor = currentColor;
     showDialog(
       context: context,
       child: AlertDialog(
@@ -171,8 +254,10 @@ class RandomWordsState extends State<RandomWords> {
           FlatButton(
             child: Text('保存'),
             onPressed: () {
-              setState(() => !isBgColor? currentColor = pickerColor:currentBgColor=pickerColor);
-              if(isBgColor)
+              setState(() => !isBgColor
+                  ? currentColor = pickerColor
+                  : currentBgColor = pickerColor);
+              if (isBgColor)
                 saveCardColorToSystem(currentBgColor.value);
               else
                 saveBarColorToSystem(currentColor.value);
@@ -182,7 +267,9 @@ class RandomWordsState extends State<RandomWords> {
           FlatButton(
             child: Text('取消'),
             onPressed: () {
-              setState(() => !isBgColor? currentColor = oriColor:currentBgColor=oriColor);
+              setState(() => !isBgColor
+                  ? currentColor = oriColor
+                  : currentBgColor = oriColor);
               Navigator.of(context).pop();
             },
           ),
@@ -190,40 +277,45 @@ class RandomWordsState extends State<RandomWords> {
       ),
     );
   }
-  void saveBarColorToSystem(color) async{
+
+  void saveBarColorToSystem(color) async {
     SharedPreferences preferences = await SharedPreferences.getInstance();
     preferences.setInt('bar_color', color);
   }
-  void saveCardColorToSystem(color) async{
+
+  void saveCardColorToSystem(color) async {
     SharedPreferences preferences = await SharedPreferences.getInstance();
     preferences.setInt('card_color', color);
   }
+
   Color oriColor;
-  Opacity _buildFloatButton(){
-   return new Opacity(
+  Opacity _buildFloatButton() {
+    return new Opacity(
       opacity: !isStarted ? 1.0 : 0.0,
       child: new FloatingActionButton(
-          onPressed: _start,
-          tooltip: '开始',
-          child: new Icon(Icons.create),
-          elevation: 3.0,
-          highlightElevation: 2.0,
-          backgroundColor: currentColor,
-        ),
-      );
-
+        onPressed: _start,
+        tooltip: '开始',
+        child: new Icon(Icons.create),
+        elevation: 3.0,
+        highlightElevation: 2.0,
+        backgroundColor: currentColor,
+      ),
+    );
   }
+
   void _collectExamSummary(int score, int duration, DateTime startDate) {
     Exam exam = new Exam(score, startDate, duration);
     _submitedExams.add(exam);
     _saveHistory();
   }
-  void _saveHistory() async{
-    String str= json.encode(_submitedExams.toList());
+
+  void _saveHistory() async {
+    String str = json.encode(_submitedExams.toList());
     SharedPreferences preferences = await SharedPreferences.getInstance();
     preferences.setString('examHistories', str);
     print('存储examHistory为:$str');
   }
+
   void _submit() {
     setState(() {
       isSumited = true;
@@ -238,24 +330,23 @@ class RandomWordsState extends State<RandomWords> {
     });
   }
 
-  void _start({bool latest=false}) {
+  void _start({bool latest = false}) {
     setState(() {
       _suggestions.clear();
-      List<Question> s=generateWordPairs();
-      print(latest);
-      if(!latest)
+      print('_start');
+      List<Question> s = list; // generateQuestions();
+      // print(latest);
+      if (!latest)
         s.shuffle();
-      else
-      {
-        s.sort((a,b)=>a.id.compareTo(b.id));
-
+      else {
+        s.sort((a, b) => a.id.compareTo(b.id));
       }
       _suggestions.addAll(s.reversed.take(10)); /*4*/
       isSumited = false;
       isStarted = true;
       var format = new DateFormat('HH:mm a');
       _startTime = DateTime.now();
-      var tt= format.format(_startTime);
+      var tt = format.format(_startTime);
       _barTitle = '$tt 考试中……';
       _suggestions.forEach((x) => x.userAnswer = "");
     });
@@ -263,7 +354,8 @@ class RandomWordsState extends State<RandomWords> {
 
   Widget _buildStartButton() {
     if (isStarted) return Container();
-    return IconButton(icon: Icon(Icons.create),tooltip: '开始', onPressed: _start);
+    return IconButton(
+        icon: Icon(Icons.create), tooltip: '开始', onPressed: _start);
   }
 
   Widget _buildSubmitButton() {
@@ -290,14 +382,13 @@ class RandomWordsState extends State<RandomWords> {
                         topRight: Radius.circular(10.0),
                         bottomLeft: Radius.circular(10.0),
                         bottomRight: Radius.circular(10.0)),
-                    ),
+                  ),
                   child: ListTile(
-                title: Text(
-                  "积分：+${exam.score}  日期：${format.format(exam.date)} 用时：${exam.duration}秒",
-                  style: _biggerFont,
-                ),
-              ));
-
+                    title: Text(
+                      (_submitedExams.toList().indexOf(exam)+1).toString()+ ") 积分：+${exam.score}  日期：${format.format(exam.date)} 用时：${exam.duration}秒",
+                      style: _biggerFont,
+                    ),
+                  ));
             },
           );
           final List<Widget> divided = ListTile.divideTiles(
@@ -305,10 +396,15 @@ class RandomWordsState extends State<RandomWords> {
             tiles: tiles,
           ).toList();
           return Scaffold(
-
             appBar: AppBar(
               backgroundColor: currentColor,
-              title: Text('总积分：'+((_submitedExams.length==0)?'0':_submitedExams.map((x)=>x.score).reduce((x,y)=>x+y).toString())),
+              title: Text('总积分：' +
+                  ((_submitedExams.length == 0)
+                      ? '0'
+                      : _submitedExams
+                          .map((x) => x.score)
+                          .reduce((x, y) => x + y)
+                          .toString())),
             ),
             body: ListView(children: divided),
           );
@@ -322,14 +418,14 @@ class RandomWordsState extends State<RandomWords> {
         itemCount: 20,
         padding: const EdgeInsets.all(4.0),
         itemBuilder: /*1*/ (context, i) {
-          if (i.isOdd) return Container();//Divider(); /*2*/
+          if (i.isOdd) return Container(); //Divider(); /*2*/
 
           final index = i ~/ 2; /*3*/
 
           if (index >= _suggestions.length) {
-            var s=generateWordPairs();
-            s.shuffle();
-            _suggestions.addAll(s.take(10)); /*4*/
+            // loadQuestions();
+            //print('index ${index}>= _suggestions.length ${_suggestions.length}');
+            return CircularProgressIndicator();
           }
 
           return _buildRow(_suggestions[index]);
@@ -360,14 +456,15 @@ class RandomWordsState extends State<RandomWords> {
                 Container(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                    (_suggestions.indexOf(pair)+1).toString()+'. '+pair.title,
+                    (_suggestions.indexOf(pair) + 1).toString() +
+                        '. ' +
+                        pair.title,
                     style: TextStyle(
                       fontWeight: FontWeight.w400,
                       fontSize: 17,
                       wordSpacing: 3,
                       letterSpacing: 0.5,
                     ),
-
                   ),
                 ),
                 /*
@@ -435,7 +532,7 @@ class RandomWordsState extends State<RandomWords> {
             //textSection,
           ],
 
-      /*
+          /*
       title: Text(
         pair.title,
         style: _biggerFont,
@@ -454,7 +551,7 @@ class RandomWordsState extends State<RandomWords> {
           }
         });
       },*/
-    ));
+        ));
     return Column(
       children: <Widget>[
         titleSection,
@@ -544,7 +641,7 @@ class RandomWordsState extends State<RandomWords> {
   }
 
   List<Question> list = new List();
-  generateWordPairs() {
+  generateQuestions() {
     if (list.length > 0) return list;
     /*
     List a = ["A", "B", "C", "D"];
@@ -554,236 +651,531 @@ class RandomWordsState extends State<RandomWords> {
       list.add(new WordPair(i, "Question " + i.toString(), a[r]));
     }*/
     QuestionManager.generate(list);
+    String str = json.encode(list);
+    print(str);
     return list;
+  }
+
+  loadQuestions() {
+    var s = generateQuestions();
+    s.shuffle();
+    _suggestions.addAll(s.take(10)); /*4*/
+  }
+
+  Future<void> _updateQuestionsFromNetwork() async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false, // user must tap button!
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('更新题库'),
+          // backgroundColor: Colors.purple[100],
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                new FutureBuilder(
+                  future: updateQuestions(),
+                  builder: (context, snapshot) {
+                    switch (snapshot.connectionState) {
+                      case ConnectionState.done:
+                        if (snapshot.hasError) {
+                          return Text('失败: ${snapshot.error}');
+                        }
+                        return Text('成功!');
+                      default:
+                        return Center(
+                          child: CircularProgressIndicator(),
+                        );
+                    }
+                  },
+                )
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            FlatButton(
+              child: Text('下次使用生效.'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+
+        return AlertDialog(
+          title: Text('Confirmation'),
+          backgroundColor: Colors.purple[100],
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text('Are you really submit the exam?'),
+                Text('You cannot regret once submition!'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            FlatButton(
+              child: Text('Confirm'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+            FlatButton(
+              child: Text('Cancel'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future updateQuestions() async {
+    var httpClient = new HttpClient();
+    var request = await httpClient.getUrl(Uri.parse(
+        'https://jsonblob.com/api/jsonBlob/cfe84bcf-bac2-11e9-93a4-bb8bb69fa70d'));
+    var response = await request.close();
+
+    if (response.statusCode == 200) {
+      var json = await response.transform(utf8.decoder).join();
+
+      List s = jsonDecode(json);
+      var a = s.map((x) => new Question.fromJson(x)).toList();
+      print('update and load from network');
+      var preferences = await SharedPreferences.getInstance();
+      preferences.setString('questions', json);
+      //_suggestions.clear();
+      //_suggestions.addAll(a.take(10));
+      return a;
+      //return Question.fromJson(json.decode(response.body));
+    } else {
+      // If that response was not OK, throw an error.
+      throw Exception('Failed to load post');
+    }
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      child: MediaQuery.removePadding(
+        context: context,
+        // DrawerHeader consumes top MediaQuery padding.
+        removeTop: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.only(top: 38.0),
+              child: Column(
+                children: <Widget>[
+                  Center(
+                    //padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: ClipOval(
+                      child: Image.asset(
+                        "images/flower.png",
+                        //width: 100,
+                        height: 150,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    "Shawn",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    "快乐学习版",
+                    style: TextStyle(fontWeight: FontWeight.normal),
+                  )
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                children: <Widget>[
+                  ListTile(
+                    leading: const Icon(Icons.assignment),
+                    title: const Text('随机开始'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _start();
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.assessment),
+                    title: const Text('最新开始'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _start(latest: true);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
-
-
-
-
-class QuestionManager{
-  static void generate(List<Question> questionEngList){
-    questionEngList.add(new Question(1,"捡起这个苹果。\r\n(     ) up the apple.\r\nA) pick\r\nB) raise\r\nC) Pick \r\nD) Raise","C"));
-    questionEngList.add(new Question(2,"指向秋千。\r\n （    ）to the swing.\n"  +
-        "A) go\n"  +
-        "B) point\n"  +
-        "C) Go\n"  +
-        "D) Point","D"));
-    questionEngList.add(new Question(3,"尝尝这个橘子。\r\n(   ) the orange.\n"  +
-        "A) Eat\n"  +
-        "B) Taste\n"  +
-        "C) eat \n"  +
-        "D) Feel","B"));
-    questionEngList.add(new Question(4,"摸摸我的手。\r\n(   ) my hand.\n"  +
-        "A) Raise\n"  +
-        "B) raise\n"  +
-        "C) touch \n"  +
-        "D) Touch","D"));
-    questionEngList.add(new Question(5,"我有一片树叶。\r\nI (   ) a leaf.\n"  +
-        "A) have\n"  +
-        "B) is\n"  +
-        "C) it \n"  +
-        "D) has","A"));
-    questionEngList.add(new Question(6,"看。这是一支铅笔。\r\nLook. This (   ) a pencil.\n"  +
-        "A) it\n"  +
-        "B) is\n"  +
-        "C) are \n"  +
-        "D) has","B"));
-    questionEngList.add(new Question(7,"我有三支钢。\r\n(   ) have three pens.\n"  +
-        "A) You\n"  +
-        "B) I\n"  +
-        "C) It \n"  +
-        "D) They","B"));
-    questionEngList.add(new Question(8,"这位是Anna。\r\n(   ) Anna.\n"  +
-        "A) That is\n"  +
-        "B) Here is\n"  +
-        "C) This are \n"  +
-        "D) This is","D"));
-    questionEngList.add(new Question(9,"你会做什么？\r\n(   ) can you do？\n"  +
-        "A) How\n"  +
-        "B) Do\n"  +
-        "C) Does \n"  +
-        "D) What","D"));
-    questionEngList.add(new Question(10,"你几岁了？\r\nHow old (   ) you？\n"  +
-        "A) is\n"  +
-        "B) are\n"  +
-        "C) does \n"  +
-        "D) do","B"));
-    questionEngList.add(new Question(11,"秋天是凉爽的。\r\n(   ) is cool.\n"  +
-        "A) Spring\n"  +
-        "B) Summer\n"  +
-        "C) Autumn \n"  +
-        "D) Winter","C"));
-    questionEngList.add(new Question(12,"打开这本书。\r\n(   ) the book.\n"  +
-        "A) pick\n"  +
-        "B) Pick\n"  +
-        "C) Open \n"  +
-        "D) Up","C"));
-    questionEngList.add(new Question(13,"收起这个书包\r\n(   ) the bag.\n"  +
-        "A) close\n"  +
-        "B) down\n"  +
-        "C) Close \n"  +
-        "D) Up","C"));
-    questionEngList.add(new Question(14,"这是一个苹果。\r\nThis is (   ) apple.\n"  +
-        "A) a\n"  +
-        "B) an\n"  +
-        "C) three \n"  +
-        "D) the","B"));
-    questionEngList.add(new Question(15,"她有一把钥匙在她的口袋里。\r\nShe (   ) a key in her pocket.\n"  +
-        "A) have\n"  +
-        "B) does\n"  +
-        "C) is \n"  +
-        "D) has","D"));
-    questionEngList.add(new Question(16,"我有一个球。\r\nI have got (   ) ball.\n"  +
-        "A) an\n"  +
-        "B) the\n"  +
-        "C) a \n"  +
-        "D) two","C"));
-    questionEngList.add(new Question(17,"这是一个滑梯。\r\nThis is a (     ).\n"  +
-        "A) swing\n"  +
-        "B) bird\n"  +
-        "C) spring \n"  +
-        "D) slide","D"));
-    questionEngList.add(new Question(18,"我有一个芋头。\r\nI (   ) a taro.\n"  +
-        "A) am\n"  +
-        "B) 'm\n"  +
-        "C) have \n"  +
-        "D) has","C"));
-    questionEngList.add(new Question(19,"她有什么？\r\nWhat does she (   )？\n"  +
-        "A) doing\n"  +
-        "B) do\n"  +
-        "C) has \n"  +
-        "D) have","D"));
-    questionEngList.add(new Question(20,"他有一个妹妹。\r\nHe (  ) a little sister.\n"  +
-        "A) is\n"  +
-        "B) does\n"  +
-        "C) has \n"  +
-        "D) have","C"));
-    questionEngList.add(new Question(21,"你有一个妹妹吗？\r\nHave you got (   ) sister?\n"  +
-        "A) the\n"  +
-        "B) a\n"  +
-        "C) your \n"  +
-        "D) my","B"));
-    questionEngList.add(new Question(22,"闻闻这个柠檬。\r\n(     ) the lemon.\n"  +
-        "A) Feel\n"  +
-        "B) Taste\n"  +
-        "C) Eat \n"  +
-        "D) Smell","D"));
-    questionEngList.add(new Question(23,"这是我的鼻子。\r\nThis is my (  ).\n"  +
-        "A) face\n"  +
-        "B) noce\n"  +
-        "C) eye \n"  +
-        "D) nose","D"));
-    questionEngList.add(new Question(24,"这是我的身体。\r\nThis is my (  ).\n"  +
-        "A) body\n"  +
-        "B) ball\n"  +
-        "C) head \n"  +
-        "D) balloon","A"));
-    questionEngList.add(new Question(25,"我有三块橡皮。\r\nI have three (    ).\n"  +
-        "A) rabbits\n"  +
-        "B) rulers\n"  +
-        "C) rubbers \n"  +
-        "D) butterfly","C"));
-    questionEngList.add(new Question(26,"坐下。\r\nSit (      ).\n"  +
-        "A) up\n"  +
-        "B) dwon\n"  +
-        "C) here \n"  +
-        "D) down","D"));
-    questionEngList.add(new Question(27,"举起你的手。\r\n(   ) your hand.\n"  +
-        "A) Put\n"  +
-        "B) raise\n"  +
-        "C) Raise \n"  +
-        "D) put","C"));
-    questionEngList.add(new Question(28,"起立。\r\nStand (    ).\n"  +
-        "A) down\n"  +
-        "B) raise\n"  +
-        "C) up \n"  +
-        "D) on","C"));
-    questionEngList.add(new Question(29,"我五岁了。\r\nI'm five (      ) old.\n"  +
-        "A) years\n"  +
-        "B) year\n"  +
-        "C) yaer \n"  +
-        "D) yaers","A"));
-    questionEngList.add(new Question(30,"这是一支蓝色的铅笔。\nThis is a  (    ) pencil.\n" +
-        "A) red\n"  +
-        "B) blue\n"  +
-        "C) green \n"  +
-        "D) black","B"));
-    questionEngList.add(new Question(31,"这是一支红色的苹果。\nThis is a  (    ) apple.\n" +
-        "A) red\n"  +
-        "B) blue\n"  +
-        "C) green \n"  +
-        "D) black","A"));
-    questionEngList.add(new Question(32,"这是一支绿色的树叶。\nThis is a  (    ) leaf.\n" +
-        "A) red\n"  +
-        "B) blue\n"  +
-        "C) green \n"  +
-        "D) black","C"));
-    questionEngList.add(new Question(33,"这是一支黄色的豆子。\nThis is a  (    ) bean.\n" +
-        "A) yellaw\n"  +
-        "B) yellow\n"  +
-        "C) yallaw \n"  +
-        "D) yallow","B"));
-    questionEngList.add(new Question(34,"这是一支黑色的钢笔。\nThis is a  (    ) pen.\n" +
-        "A) bleck\n"  +
-        "B) block\n"  +
-        "C) plack \n"  +
-        "D) black","D"));
-    questionEngList.add(new Question(35,"这是一支白色的纸。\nThis is a  (    ) paper.\n" +
-        "A) write\n"  +
-        "B) white\n"  +
-        "C) black \n"  +
-        "D) blue","B"));
-    questionEngList.add(new Question(36,"这是一支紫色的铅笔吗？\nIs the pencil (    )?\n" +
-        "A) perple\n"  +
-        "B) pink\n"  +
-        "C) purple \n"  +
-        "D) punk","C"));
-    questionEngList.add(new Question(37,"这是一本橙色的书。\nIt's (    ) orange book.\n" +
-        "A) a\n"  +
-        "B) an\n"  +
-        "C) the \n"  +
-        "D) my","B"));
-    questionEngList.add(new Question(38,"我的鞋是金色的。\nMy shoes are (   ).\n" +
-        "A) good\n"  +
-        "B) gold\n"  +
-        "C) glod \n"  +
-        "D) god","B"));
-    questionEngList.add(new Question(39,"我的鞋是棕色的。\nMy (   ) are brown.\n" +
-        "A) shoe\n"  +
-        "B) sheo\n"  +
-        "C) shoes \n"  +
-        "D) sheos","C"));
-    questionEngList.add(new Question(40,"给小鸟涂色。\n（    ）the bird.\n" +
-        "A) colour\n"  +
-        "B) Colour\n"  +
-        "C) Culour \n"  +
-        "D) culour","B"));
-    questionEngList.add(new Question(41,"做一个风筝。\nMake a (   ).\n" +
-        "A) cite\n"  +
-        "B) Cite\n"  +
-        "C) kite \n"  +
-        "D) Kite","C"));
-    questionEngList.add(new Question(42,"我的鞋是粉色的。\nMy shoes (    ) pink.\n" +
-        "A) is\n"  +
-        "B) are\n"  +
-        "C) the \n"  +
-        "D) a","B"));
-    questionEngList.add(new Question(43,"孔雀：(    )\n" +
-        "A) peokock\n"  +
-        "B) peacock\n"  +
-        "C) picock \n"  +
-        "D) pikock","B"));
-    questionEngList.add(new Question(44,"考拉：(    )\n" +
-        "A) kaola\n"  +
-        "B) coala\n"  +
-        "C) koala \n"  +
-        "D) caola","C"));
-    questionEngList.add(new Question(45,"蝴蝶：(    )\n" +
-        "A) buterfly\n"  +
-        "B) batterfly\n"  +
-        "C) butterflg \n"  +
-        "D) butterfly","D"));
+class QuestionManager {
+  static void generate(List<Question> questionEngList) {
+    questionEngList.add(new Question(
+        1,
+        "捡起这个苹果。\r\n(     ) up the apple.\r\nA) pick\r\nB) raise\r\nC) Pick \r\nD) Raise",
+        "C"));
+    questionEngList.add(new Question(
+        2,
+        "指向秋千。\r\n （    ）to the swing.\n" +
+            "A) go\n" +
+            "B) point\n" +
+            "C) Go\n" +
+            "D) Point",
+        "D"));
+    questionEngList.add(new Question(
+        3,
+        "尝尝这个橘子。\r\n(   ) the orange.\n" +
+            "A) Eat\n" +
+            "B) Taste\n" +
+            "C) eat \n" +
+            "D) Feel",
+        "B"));
+    questionEngList.add(new Question(
+        4,
+        "摸摸我的手。\r\n(   ) my hand.\n" +
+            "A) Raise\n" +
+            "B) raise\n" +
+            "C) touch \n" +
+            "D) Touch",
+        "D"));
+    questionEngList.add(new Question(
+        5,
+        "我有一片树叶。\r\nI (   ) a leaf.\n" +
+            "A) have\n" +
+            "B) is\n" +
+            "C) it \n" +
+            "D) has",
+        "A"));
+    questionEngList.add(new Question(
+        6,
+        "看。这是一支铅笔。\r\nLook. This (   ) a pencil.\n" +
+            "A) it\n" +
+            "B) is\n" +
+            "C) are \n" +
+            "D) has",
+        "B"));
+    questionEngList.add(new Question(
+        7,
+        "我有三支钢。\r\n(   ) have three pens.\n" +
+            "A) You\n" +
+            "B) I\n" +
+            "C) It \n" +
+            "D) They",
+        "B"));
+    questionEngList.add(new Question(
+        8,
+        "这位是Anna。\r\n(   ) Anna.\n" +
+            "A) That is\n" +
+            "B) Here is\n" +
+            "C) This are \n" +
+            "D) This is",
+        "D"));
+    questionEngList.add(new Question(
+        9,
+        "你会做什么？\r\n(   ) can you do？\n" +
+            "A) How\n" +
+            "B) Do\n" +
+            "C) Does \n" +
+            "D) What",
+        "D"));
+    questionEngList.add(new Question(
+        10,
+        "你几岁了？\r\nHow old (   ) you？\n" +
+            "A) is\n" +
+            "B) are\n" +
+            "C) does \n" +
+            "D) do",
+        "B"));
+    questionEngList.add(new Question(
+        11,
+        "秋天是凉爽的。\r\n(   ) is cool.\n" +
+            "A) Spring\n" +
+            "B) Summer\n" +
+            "C) Autumn \n" +
+            "D) Winter",
+        "C"));
+    questionEngList.add(new Question(
+        12,
+        "打开这本书。\r\n(   ) the book.\n" +
+            "A) pick\n" +
+            "B) Pick\n" +
+            "C) Open \n" +
+            "D) Up",
+        "C"));
+    questionEngList.add(new Question(
+        13,
+        "收起这个书包\r\n(   ) the bag.\n" +
+            "A) close\n" +
+            "B) down\n" +
+            "C) Close \n" +
+            "D) Up",
+        "C"));
+    questionEngList.add(new Question(
+        14,
+        "这是一个苹果。\r\nThis is (   ) apple.\n" +
+            "A) a\n" +
+            "B) an\n" +
+            "C) three \n" +
+            "D) the",
+        "B"));
+    questionEngList.add(new Question(
+        15,
+        "她有一把钥匙在她的口袋里。\r\nShe (   ) a key in her pocket.\n" +
+            "A) have\n" +
+            "B) does\n" +
+            "C) is \n" +
+            "D) has",
+        "D"));
+    questionEngList.add(new Question(
+        16,
+        "我有一个球。\r\nI have got (   ) ball.\n" +
+            "A) an\n" +
+            "B) the\n" +
+            "C) a \n" +
+            "D) two",
+        "C"));
+    questionEngList.add(new Question(
+        17,
+        "这是一个滑梯。\r\nThis is a (     ).\n" +
+            "A) swing\n" +
+            "B) bird\n" +
+            "C) spring \n" +
+            "D) slide",
+        "D"));
+    questionEngList.add(new Question(
+        18,
+        "我有一个芋头。\r\nI (   ) a taro.\n" +
+            "A) am\n" +
+            "B) 'm\n" +
+            "C) have \n" +
+            "D) has",
+        "C"));
+    questionEngList.add(new Question(
+        19,
+        "她有什么？\r\nWhat does she (   )？\n" +
+            "A) doing\n" +
+            "B) do\n" +
+            "C) has \n" +
+            "D) have",
+        "D"));
+    questionEngList.add(new Question(
+        20,
+        "他有一个妹妹。\r\nHe (  ) a little sister.\n" +
+            "A) is\n" +
+            "B) does\n" +
+            "C) has \n" +
+            "D) have",
+        "C"));
+    questionEngList.add(new Question(
+        21,
+        "你有一个妹妹吗？\r\nHave you got (   ) sister?\n" +
+            "A) the\n" +
+            "B) a\n" +
+            "C) your \n" +
+            "D) my",
+        "B"));
+    questionEngList.add(new Question(
+        22,
+        "闻闻这个柠檬。\r\n(     ) the lemon.\n" +
+            "A) Feel\n" +
+            "B) Taste\n" +
+            "C) Eat \n" +
+            "D) Smell",
+        "D"));
+    questionEngList.add(new Question(
+        23,
+        "这是我的鼻子。\r\nThis is my (  ).\n" +
+            "A) face\n" +
+            "B) noce\n" +
+            "C) eye \n" +
+            "D) nose",
+        "D"));
+    questionEngList.add(new Question(
+        24,
+        "这是我的身体。\r\nThis is my (  ).\n" +
+            "A) body\n" +
+            "B) ball\n" +
+            "C) head \n" +
+            "D) balloon",
+        "A"));
+    questionEngList.add(new Question(
+        25,
+        "我有三块橡皮。\r\nI have three (    ).\n" +
+            "A) rabbits\n" +
+            "B) rulers\n" +
+            "C) rubbers \n" +
+            "D) butterfly",
+        "C"));
+    questionEngList.add(new Question(
+        26,
+        "坐下。\r\nSit (      ).\n" +
+            "A) up\n" +
+            "B) dwon\n" +
+            "C) here \n" +
+            "D) down",
+        "D"));
+    questionEngList.add(new Question(
+        27,
+        "举起你的手。\r\n(   ) your hand.\n" +
+            "A) Put\n" +
+            "B) raise\n" +
+            "C) Raise \n" +
+            "D) put",
+        "C"));
+    questionEngList.add(new Question(
+        28,
+        "起立。\r\nStand (    ).\n" +
+            "A) down\n" +
+            "B) raise\n" +
+            "C) up \n" +
+            "D) on",
+        "C"));
+    questionEngList.add(new Question(
+        29,
+        "我五岁了。\r\nI'm five (      ) old.\n" +
+            "A) years\n" +
+            "B) year\n" +
+            "C) yaer \n" +
+            "D) yaers",
+        "A"));
+    questionEngList.add(new Question(
+        30,
+        "这是一支蓝色的铅笔。\nThis is a  (    ) pencil.\n" +
+            "A) red\n" +
+            "B) blue\n" +
+            "C) green \n" +
+            "D) black",
+        "B"));
+    questionEngList.add(new Question(
+        31,
+        "这是一支红色的苹果。\nThis is a  (    ) apple.\n" +
+            "A) red\n" +
+            "B) blue\n" +
+            "C) green \n" +
+            "D) black",
+        "A"));
+    questionEngList.add(new Question(
+        32,
+        "这是一支绿色的树叶。\nThis is a  (    ) leaf.\n" +
+            "A) red\n" +
+            "B) blue\n" +
+            "C) green \n" +
+            "D) black",
+        "C"));
+    questionEngList.add(new Question(
+        33,
+        "这是一支黄色的豆子。\nThis is a  (    ) bean.\n" +
+            "A) yellaw\n" +
+            "B) yellow\n" +
+            "C) yallaw \n" +
+            "D) yallow",
+        "B"));
+    questionEngList.add(new Question(
+        34,
+        "这是一支黑色的钢笔。\nThis is a  (    ) pen.\n" +
+            "A) bleck\n" +
+            "B) block\n" +
+            "C) plack \n" +
+            "D) black",
+        "D"));
+    questionEngList.add(new Question(
+        35,
+        "这是一支白色的纸。\nThis is a  (    ) paper.\n" +
+            "A) write\n" +
+            "B) white\n" +
+            "C) black \n" +
+            "D) blue",
+        "B"));
+    questionEngList.add(new Question(
+        36,
+        "这是一支紫色的铅笔吗？\nIs the pencil (    )?\n" +
+            "A) perple\n" +
+            "B) pink\n" +
+            "C) purple \n" +
+            "D) punk",
+        "C"));
+    questionEngList.add(new Question(
+        37,
+        "这是一本橙色的书。\nIt's (    ) orange book.\n" +
+            "A) a\n" +
+            "B) an\n" +
+            "C) the \n" +
+            "D) my",
+        "B"));
+    questionEngList.add(new Question(
+        38,
+        "我的鞋是金色的。\nMy shoes are (   ).\n" +
+            "A) good\n" +
+            "B) gold\n" +
+            "C) glod \n" +
+            "D) god",
+        "B"));
+    questionEngList.add(new Question(
+        39,
+        "我的鞋是棕色的。\nMy (   ) are brown.\n" +
+            "A) shoe\n" +
+            "B) sheo\n" +
+            "C) shoes \n" +
+            "D) sheos",
+        "C"));
+    questionEngList.add(new Question(
+        40,
+        "给小鸟涂色。\n（    ）the bird.\n" +
+            "A) colour\n" +
+            "B) Colour\n" +
+            "C) Culour \n" +
+            "D) culour",
+        "B"));
+    questionEngList.add(new Question(
+        41,
+        "做一个风筝。\nMake a (   ).\n" +
+            "A) cite\n" +
+            "B) Cite\n" +
+            "C) kite \n" +
+            "D) Kite",
+        "C"));
+    questionEngList.add(new Question(
+        42,
+        "我的鞋是粉色的。\nMy shoes (    ) pink.\n" +
+            "A) is\n" +
+            "B) are\n" +
+            "C) the \n" +
+            "D) a",
+        "B"));
+    questionEngList.add(new Question(
+        43,
+        "孔雀：(    )\n" +
+            "A) peokock\n" +
+            "B) peacock\n" +
+            "C) picock \n" +
+            "D) pikock",
+        "B"));
+    questionEngList.add(new Question(
+        44,
+        "考拉：(    )\n" +
+            "A) kaola\n" +
+            "B) coala\n" +
+            "C) koala \n" +
+            "D) caola",
+        "C"));
+    questionEngList.add(new Question(
+        45,
+        "蝴蝶：(    )\n" +
+            "A) buterfly\n" +
+            "B) batterfly\n" +
+            "C) butterflg \n" +
+            "D) butterfly",
+        "D"));
   }
 }

@@ -20,7 +20,7 @@ class MyDrawer extends StatelessWidget {
               child: Column(
                 children: <Widget>[
                   Center(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    //padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     child: ClipOval(
                       child: Image.asset(
                         "images/flower.png",
@@ -34,7 +34,7 @@ class MyDrawer extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                   Text(
-                    "天童美语",
+                    "快乐学习版",
                     style: TextStyle(fontWeight: FontWeight.normal),
                   )
                 ],
@@ -45,11 +45,11 @@ class MyDrawer extends StatelessWidget {
                 children: <Widget>[
                   ListTile(
                     leading: const Icon(Icons.assignment),
-                    title: const Text('英语'),
+                    title: const Text('随机开始'),
                   ),
                   ListTile(
                     leading: const Icon(Icons.assessment),
-                    title: const Text('数学'),
+                    title: const Text('最新开始'),
                   ),
                 ],
               ),
